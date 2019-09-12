@@ -53,6 +53,7 @@ add_executable(kcore        test/KCoreTest.cu)
 add_executable(triangle2    test/TriangleTest2.cu)
 add_executable(clus-coeff   test/ClusCoeffTest.cu)
 add_executable(pr           test/PageRankTest.cu)
+add_executable(offset       test/offsetTest.cu)
 
 target_link_libraries(dummy         hornetAlg)
 target_link_libraries(bfs2          hornetAlg)
@@ -67,3 +68,6 @@ target_link_libraries(kcore         hornetAlg)
 target_link_libraries(triangle2     hornetAlg)
 target_link_libraries(clus-coeff    hornetAlg)
 target_link_libraries(pr            hornetAlg)
+target_link_libraries(offset        hornetAlg)
+
+
