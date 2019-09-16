@@ -15,10 +15,11 @@
 
 #include <Device/Util/Timer.cuh>
 
+#include "offsetKernels.cuh"
+
 
 namespace hornets_nest{
-    using string_t = char;
-    using soffset_t = int;
+
 
     using HornetInit  = ::hornet::HornetInit<string_t,EMPTY,EMPTY,soffset_t>;
     // using HornetDynamicGraph = ::hornet::gpu::Hornet<string_t>;
@@ -29,7 +30,6 @@ namespace hornets_nest{
 #define CHECK_ERROR(str) \
     {cudaError_t err; err = cudaGetLastError(); if(err!=0) {printf("ERROR %s:  %d %s\n", str, err, cudaGetErrorString(err)); fflush(stdout); exit(0);}}
 
-#include "offsetKernels.cuh"
 
 template <typename HornetGraph>
 int exec(int argc, char* argv[]) {
@@ -87,15 +87,15 @@ int exec(int argc, char* argv[]) {
         cudaMemcpy(&hlineCounts,dCounter,sizeof(int), cudaMemcpyDeviceToHost);
         printf("Line Count : %d \n",hlineCounts);
 
-        soffset_t *rowStarts,*rowStartsSorted;//,*rowOffsets;
+        soffset_t *d_rowStarts,*d_rowStartsSorted;//,*rowOffsets;
 
-        gpu::allocate(rowStartsSorted,hlineCounts+1);
-        gpu::allocate(rowStarts,hlineCounts+1);
+        gpu::allocate(d_rowStartsSorted,hlineCounts+1);
+        gpu::allocate(d_rowStarts,hlineCounts+1);
         // gpu::allocate(rowOffsets,hlineCounts+1);
         cudaMemset(dCounter,0, sizeof(int));
-        cudaMemset(rowStarts,0, sizeof(int));
+        cudaMemset(d_rowStarts,0, sizeof(int));
 
-        forAll(fsize, hornets_nest::findAndStoreLineEnds {'\n', dCounter, d_fileInfo,rowStarts+1});
+        forAll(fsize, hornets_nest::findAndStoreLineEnds {'\n', dCounter, d_fileInfo,d_rowStarts+1});
 
         cudaMemcpy(&hlineCounts,dCounter,sizeof(int), cudaMemcpyDeviceToHost);
         printf("Line Count : %d \n",hlineCounts);
@@ -105,9 +105,9 @@ int exec(int argc, char* argv[]) {
         {
             void     *d_temp_storage = NULL;
             size_t   temp_storage_bytes = 0;
-            cub::DeviceRadixSort::SortKeys(d_temp_storage, temp_storage_bytes, rowStarts, rowStartsSorted, hlineCounts+1);
+            cub::DeviceRadixSort::SortKeys(d_temp_storage, temp_storage_bytes, d_rowStarts, d_rowStartsSorted, hlineCounts+1);
             cudaMalloc(&d_temp_storage, temp_storage_bytes);
-            cub::DeviceRadixSort::SortKeys(d_temp_storage, temp_storage_bytes, rowStarts, rowStartsSorted, hlineCounts+1);
+            cub::DeviceRadixSort::SortKeys(d_temp_storage, temp_storage_bytes, d_rowStarts, d_rowStartsSorted, hlineCounts+1);
             cudaFree(d_temp_storage);
         }
 
@@ -117,22 +117,65 @@ int exec(int argc, char* argv[]) {
         // {
         //     void     *d_temp_storage = NULL;
         //     size_t   temp_storage_bytes = 0;
-        //     cub::DeviceScan::InclusiveSum(d_temp_storage, temp_storage_bytes, rowStartsSorted, rowOffsets+1, hlineCounts);
+        //     cub::DeviceScan::InclusiveSum(d_temp_storage, temp_storage_bytes, d_rowStartsSorted, rowOffsets+1, hlineCounts);
         //     cudaMalloc(&d_temp_storage, temp_storage_bytes);
-        //     cub::DeviceScan::InclusiveSum(d_temp_storage, temp_storage_bytes, rowStartsSorted, rowOffsets+1, hlineCounts);            
+        //     cub::DeviceScan::InclusiveSum(d_temp_storage, temp_storage_bytes, d_rowStartsSorted, rowOffsets+1, hlineCounts);            
         //     cudaFree(d_temp_storage);
         // }
 
+        soffset_t *d_rowWordCounter,*d_rowWordOffset;
+
+
+        gpu::allocate(d_rowWordCounter,hlineCounts+1);
+        gpu::allocate(d_rowWordOffset ,hlineCounts+1);
+
+
+
+        cudaMemset(d_rowWordCounter,0, sizeof(soffset_t)*(hlineCounts+1));
+        cudaMemset(d_rowWordOffset,0, sizeof(soffset_t));
 
         cudaMemset(dCounter,0, sizeof(int));
-        forAll(hlineCounts, hornets_nest::countWords {' ', dCounter, d_fileInfo,rowStartsSorted,hlineCounts });
+        forAll(hlineCounts, hornets_nest::countWords<false> {' ', dCounter, d_fileInfo,d_rowStartsSorted,hlineCounts,d_rowWordCounter, NULL,NULL});
         int hWordCounts = 0;
         cudaMemcpy(&hWordCounts,dCounter,sizeof(int), cudaMemcpyDeviceToHost);
         printf("Word Count : %d \n",hWordCounts);
 
 
-        gpu::free(rowStarts);
-        gpu::free(rowStartsSorted);
+        // Creating offset array based on sorted data
+        {
+            void     *d_temp_storage = NULL;
+            size_t   temp_storage_bytes = 0;
+            cub::DeviceScan::InclusiveSum(d_temp_storage, temp_storage_bytes, d_rowWordCounter, d_rowWordOffset+1, hlineCounts);
+            cudaMalloc(&d_temp_storage, temp_storage_bytes);
+            cub::DeviceScan::InclusiveSum(d_temp_storage, temp_storage_bytes, d_rowWordCounter, d_rowWordOffset+1, hlineCounts);            
+            cudaFree(d_temp_storage);
+        }
+
+        cudaMemcpy(&hWordCounts,d_rowWordOffset+hlineCounts,sizeof(soffset_t),cudaMemcpyDeviceToHost);
+        printf("Word Count : %d \n",hWordCounts);
+
+
+        split_t *d_wordSplits;
+        soffset_t *d_maxLen,h_maxLen;
+        gpu::allocate(d_wordSplits ,hWordCounts);
+        gpu::allocate(d_maxLen ,1);
+
+        forAll(hlineCounts, hornets_nest::countWords<true> {' ', dCounter, d_fileInfo,d_rowStartsSorted,hlineCounts,d_rowWordCounter, d_rowWordOffset,d_wordSplits});
+
+        forAll(hlineCounts, [=] __device__ (int row){ atomicMax(d_maxLen,d_rowWordCounter[row]); } );
+        cudaMemcpy(&h_maxLen,d_maxLen,sizeof(soffset_t),cudaMemcpyDeviceToHost);
+
+        printf("Largest Line in Words is : %d \n",h_maxLen);
+
+
+        gpu::free(d_maxLen);
+        gpu::free(d_wordSplits);
+        gpu::free(d_rowWordCounter);
+        gpu::free(d_rowWordOffset);
+
+
+        gpu::free(d_rowStarts);
+        gpu::free(d_rowStartsSorted);
         // gpu::free(rowOffsets);
 
 
