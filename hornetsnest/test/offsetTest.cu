@@ -100,8 +100,7 @@ int exec(int argc, char* argv[]) {
         cudaMemcpy(&hlineCounts,dCounter,sizeof(int), cudaMemcpyDeviceToHost);
         printf("Line Count : %d \n",hlineCounts);
 
-
-        // Sorting the starting positions
+        // Sorting the starting positions - this is equivalent of an offset array is the values monotonically growing
         {
             void     *d_temp_storage = NULL;
             size_t   temp_storage_bytes = 0;
@@ -111,29 +110,15 @@ int exec(int argc, char* argv[]) {
             cudaFree(d_temp_storage);
         }
 
-            // hlineCounts--; // Removing the last empty row that got add because the last character is '\n'
-
-        // // Creating offset array based on sorted data
-        // {
-        //     void     *d_temp_storage = NULL;
-        //     size_t   temp_storage_bytes = 0;
-        //     cub::DeviceScan::InclusiveSum(d_temp_storage, temp_storage_bytes, d_rowStartsSorted, rowOffsets+1, hlineCounts);
-        //     cudaMalloc(&d_temp_storage, temp_storage_bytes);
-        //     cub::DeviceScan::InclusiveSum(d_temp_storage, temp_storage_bytes, d_rowStartsSorted, rowOffsets+1, hlineCounts);            
-        //     cudaFree(d_temp_storage);
-        // }
-
         soffset_t *d_rowWordCounter,*d_rowWordOffset;
-
 
         gpu::allocate(d_rowWordCounter,hlineCounts+1);
         gpu::allocate(d_rowWordOffset ,hlineCounts+1);
 
-
-
         cudaMemset(d_rowWordCounter,0, sizeof(soffset_t)*(hlineCounts+1));
         cudaMemset(d_rowWordOffset,0, sizeof(soffset_t));
 
+        // Coun the number of words per row
         cudaMemset(dCounter,0, sizeof(int));
         forAll(hlineCounts, hornets_nest::countWords<false> {' ', dCounter, d_fileInfo,d_rowStartsSorted,hlineCounts,d_rowWordCounter, NULL,NULL});
         int hWordCounts = 0;
@@ -141,7 +126,7 @@ int exec(int argc, char* argv[]) {
         printf("Word Count : %d \n",hWordCounts);
 
 
-        // Creating offset array based on sorted data
+        // Creating offset of the word counters per row (this will be used for the offset array of the words themselves)
         {
             void     *d_temp_storage = NULL;
             size_t   temp_storage_bytes = 0;
@@ -160,12 +145,48 @@ int exec(int argc, char* argv[]) {
         gpu::allocate(d_wordSplits ,hWordCounts);
         gpu::allocate(d_maxLen ,1);
 
+        // Create the compressed sparse representation of the rows (each entry is a separate row)
         forAll(hlineCounts, hornets_nest::countWords<true> {' ', dCounter, d_fileInfo,d_rowStartsSorted,hlineCounts,d_rowWordCounter, d_rowWordOffset,d_wordSplits});
 
+
+        // ------- Get the size of the largest row in words
+        cudaMemset(d_maxLen,0, sizeof(int));
         forAll(hlineCounts, [=] __device__ (int row){ atomicMax(d_maxLen,d_rowWordCounter[row]); } );
         cudaMemcpy(&h_maxLen,d_maxLen,sizeof(soffset_t),cudaMemcpyDeviceToHost);
-
         printf("Largest Line in Words is : %d \n",h_maxLen);
+        cudaMemset(d_maxLen,0, sizeof(int));
+        forAll(hlineCounts, [=] __device__ (int row){ atomicMax(d_maxLen,d_rowWordOffset[row+1]-d_rowWordOffset[row]); });
+        cudaMemcpy(&h_maxLen,d_maxLen,sizeof(soffset_t),cudaMemcpyDeviceToHost);
+        printf("Largest Line in Words is : %d \n",h_maxLen);
+
+
+        // -------
+
+		soffset_t sumWords=0;
+        // Going through all the columns of the data
+        for(soffset_t c=0; c<=h_maxLen;c++){
+	        soffset_t *d_wordPerColumn,h_wordPerColumn;
+	        soffset_t *d_wordColumnSize,h_wordColumnSize;
+	        gpu::allocate(d_wordPerColumn ,1);
+	        gpu::allocate(d_wordColumnSize ,1);
+
+	        cudaMemset(d_wordPerColumn,0, sizeof(soffset_t));
+	        cudaMemset(d_wordColumnSize,0, sizeof(soffset_t));
+
+	        forAll(hlineCounts, hornets_nest::countWordPerColumn {d_rowWordOffset,d_wordPerColumn,c});
+
+	        cudaMemcpy(&h_wordPerColumn,d_wordPerColumn,sizeof(soffset_t),cudaMemcpyDeviceToHost);
+	        cudaMemcpy(&h_wordColumnSize,d_wordColumnSize,sizeof(soffset_t),cudaMemcpyDeviceToHost);
+
+	        printf("(%d, %d, %d), ", c, h_wordPerColumn,h_wordColumnSize);
+	        sumWords+=h_wordPerColumn;
+	        gpu::free(d_wordColumnSize);
+	        gpu::free(d_wordPerColumn);
+        }
+        printf("\n");
+
+        printf("The sum of the words is %d\n",sumWords);
+
 
 
         gpu::free(d_maxLen);
@@ -189,6 +210,7 @@ int exec(int argc, char* argv[]) {
     float milliseconds = 0;
     cudaEventElapsedTime(&milliseconds, start, stop);  
     printf("%f,", milliseconds/1000.0);             
+    printf("\n");
 
 
 

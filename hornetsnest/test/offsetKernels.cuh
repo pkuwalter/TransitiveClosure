@@ -89,8 +89,10 @@ struct countWords {
 			soffset_t wordLength = l-start;
 			// wordLength *= wordLength;
 			if(!storeOffsets){
-				rowWordCounter[row]++;
-				atomicAdd(count,1);				
+				if(wordLength>0){
+					rowWordCounter[row]++;
+					atomicAdd(count,1);									
+				}
 			}else{
 				wordSplits[rowWordOffsets[row]+words].start = start;
 				wordSplits[rowWordOffsets[row]+words].len 	= wordLength;
@@ -99,6 +101,21 @@ struct countWords {
 		}
 	}
 };
+
+struct countWordPerColumn {
+	soffset_t *rowWordCounter;
+	soffset_t *columnCounter;
+	soffset_t currentCol;
+
+	OPERATOR(int row){
+
+		soffset_t len 		= rowWordCounter[row+1]-rowWordCounter[row];
+		// soffset_t len 		= rowWordCounter[row];
+		if(len==(currentCol))
+			atomicAdd(columnCounter,1);
+	}
+};
+
 
 
 
