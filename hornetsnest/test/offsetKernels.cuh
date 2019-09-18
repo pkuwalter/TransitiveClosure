@@ -104,18 +104,58 @@ struct countWords {
 
 struct countWordPerColumn {
 	soffset_t *rowWordCounter;
-	soffset_t *columnCounter;
-	soffset_t currentCol;
+	soffset_t *columnWordCounter;
+	soffset_t *columnSize;
+	soffset_t  currentCol;
+
+	soffset_t *rowWordOffsets;
+	split_t   *wordSplits;
+
+    soffset_t *d_columnStringSize;
+
 
 	OPERATOR(int row){
+		soffset_t len 		= rowWordCounter[row];
 
-		soffset_t len 		= rowWordCounter[row+1]-rowWordCounter[row];
+		// soffset_t len 		= rowWordCounter[row+1]-rowWordCounter[row];
+		// soffset_t wordPos   = rowWordOffsets[row+1]-rowWordOffsets[row];
+
+		d_columnStringSize[row]=0; // Crucial for rows that will not an entry
+
 		// soffset_t len 		= rowWordCounter[row];
-		if(len==(currentCol))
-			atomicAdd(columnCounter,1);
+		if(len>currentCol){
+
+			atomicAdd(columnWordCounter,1);
+			atomicAdd(columnSize,wordSplits[rowWordOffsets[row]+currentCol].len);
+
+			d_columnStringSize[row] = wordSplits[rowWordOffsets[row]+currentCol].len;
+		}
 	}
 };
 
+
+// struct copyWordsToColumn {
+// 	soffset_t *rowWordCounter;
+// 	soffset_t  currentCol;
+
+// 	soffset_t *rowWordOffsets;
+// 	split_t   *wordSplits;
+
+//     soffset_t *d_columnStringSize;
+
+
+// 	OPERATOR(int row){
+
+// 		soffset_t len 		= rowWordCounter[row+1]-rowWordCounter[row];
+// 		if(len>currentCol){
+
+// 			atomicAdd(columnWordCounter,1);
+// 			atomicAdd(columnSize,wordSplits[rowWordOffsets[row]+currentCol].len);
+
+// 			d_columnStringSize[row] = wordSplits[rowWordOffsets[row]+currentCol].len;
+// 		}
+// 	}
+// };
 
 
 

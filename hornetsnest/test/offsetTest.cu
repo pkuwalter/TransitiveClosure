@@ -161,32 +161,64 @@ int exec(int argc, char* argv[]) {
 
 
         // -------
+	    soffset_t *d_columnStringSize,*d_columnStringOffset;
+
+        gpu::allocate(d_columnStringSize, hlineCounts+1);
+        gpu::allocate(d_columnStringOffset, hlineCounts+1);
+
+
+        void     *d_temp_storage_string_offset = NULL; size_t   temp_storage_bytes_string_offset = 0;
+        cub::DeviceScan::InclusiveSum(d_temp_storage_string_offset, temp_storage_bytes_string_offset, d_columnStringSize, d_columnStringOffset+1, hlineCounts);
+        cudaMalloc(&d_temp_storage_string_offset, temp_storage_bytes_string_offset);
+
+
 
 		soffset_t sumWords=0;
+        soffset_t *d_wordColumnSize,h_wordColumnSize;
+	    soffset_t *d_wordPerColumn,h_wordPerColumn;
+
+        gpu::allocate(d_wordPerColumn ,1);
+        gpu::allocate(d_wordColumnSize ,1);
+
         // Going through all the columns of the data
         for(soffset_t c=0; c<=h_maxLen;c++){
-	        soffset_t *d_wordPerColumn,h_wordPerColumn;
-	        soffset_t *d_wordColumnSize,h_wordColumnSize;
-	        gpu::allocate(d_wordPerColumn ,1);
-	        gpu::allocate(d_wordColumnSize ,1);
 
 	        cudaMemset(d_wordPerColumn,0, sizeof(soffset_t));
 	        cudaMemset(d_wordColumnSize,0, sizeof(soffset_t));
 
-	        forAll(hlineCounts, hornets_nest::countWordPerColumn {d_rowWordOffset,d_wordPerColumn,c});
+	        forAll(hlineCounts, hornets_nest::countWordPerColumn {d_rowWordCounter,d_wordPerColumn,d_wordColumnSize,c,d_rowWordOffset,d_wordSplits,d_columnStringSize});
 
 	        cudaMemcpy(&h_wordPerColumn,d_wordPerColumn,sizeof(soffset_t),cudaMemcpyDeviceToHost);
 	        cudaMemcpy(&h_wordColumnSize,d_wordColumnSize,sizeof(soffset_t),cudaMemcpyDeviceToHost);
 
+	        string_t* columnStringData;
+
+	        gpu::allocate(columnStringData,sizeof(d_wordColumnSize));
+
+	        cudaMemset(d_columnStringOffset,0, sizeof(soffset_t));
+	        cub::DeviceScan::InclusiveSum(d_temp_storage_string_offset, temp_storage_bytes_string_offset, d_columnStringSize, d_columnStringOffset+1, hlineCounts);
+
+
+	        // forAll(hlineCounts, hornets_nest::copyWordsToColumn {d_rowWordOffset,c,d_rowWordOffset,d_wordSplits,d_columnStringOffset});
+
+
+	        gpu::free(columnStringData);
+
+
 	        printf("(%d, %d, %d), ", c, h_wordPerColumn,h_wordColumnSize);
 	        sumWords+=h_wordPerColumn;
-	        gpu::free(d_wordColumnSize);
-	        gpu::free(d_wordPerColumn);
         }
+        gpu::free(d_wordColumnSize);
+        gpu::free(d_wordPerColumn);
+
+        cudaFree(d_temp_storage_string_offset);
+
         printf("\n");
 
         printf("The sum of the words is %d\n",sumWords);
 
+		gpu::free(d_columnStringSize);
+		gpu::free(d_columnStringOffset);        
 
 
         gpu::free(d_maxLen);
@@ -222,14 +254,14 @@ int exec(int argc, char* argv[]) {
 
 int main(int argc, char* argv[]) {
     int ret = 0;
-    // hornets_nest::gpu::initializeRMMPoolAllocation();//update initPoolSize if you know your memory requirement and memory availability in your system, if initial pool size is set to 0 (default value), RMM currently assigns half the device memory.
+    hornets_nest::gpu::initializeRMMPoolAllocation();//update initPoolSize if you know your memory requirement and memory availability in your system, if initial pool size is set to 0 (default value), RMM currently assigns half the device memory.
     {//scoping technique to make sure that hornets_nest::gpu::finalizeRMMPoolAllocation is called after freeing all RMM allocations.
 
     //ret = exec<hornets_nest::HornetDynamicGraph, hornets_nest::BfsTopDown2Dynamic>(argc, argv);
     ret = exec<hornets_nest::HornetStaticGraph>(argc, argv);
 
     }//scoping technique to make sure that hornets_nest::gpu::finalizeRMMPoolAllocation is called after freeing all RMM allocations.
-    // hornets_nest::gpu::finalizeRMMPoolAllocation();
+    hornets_nest::gpu::finalizeRMMPoolAllocation();
 
     return ret;
 }
