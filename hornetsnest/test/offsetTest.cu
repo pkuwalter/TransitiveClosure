@@ -191,21 +191,18 @@ int exec(int argc, char* argv[]) {
 	        cudaMemcpy(&h_wordPerColumn,d_wordPerColumn,sizeof(soffset_t),cudaMemcpyDeviceToHost);
 	        cudaMemcpy(&h_wordColumnSize,d_wordColumnSize,sizeof(soffset_t),cudaMemcpyDeviceToHost);
 
-	        string_t* columnStringData;
+	        string_t* d_columnStringData;
 
-	        gpu::allocate(columnStringData,sizeof(d_wordColumnSize));
+	        gpu::allocate(d_columnStringData,sizeof(d_wordColumnSize));
 
 	        cudaMemset(d_columnStringOffset,0, sizeof(soffset_t));
 	        cub::DeviceScan::InclusiveSum(d_temp_storage_string_offset, temp_storage_bytes_string_offset, d_columnStringSize, d_columnStringOffset+1, hlineCounts);
 
+	        forAll(hlineCounts, hornets_nest::copyWordsToColumn {d_rowWordCounter,c,d_fileInfo, d_rowStartsSorted,
+	        	d_rowWordOffset,d_wordSplits,d_columnStringOffset,d_columnStringData,hlineCounts});
 
-	        // forAll(hlineCounts, hornets_nest::copyWordsToColumn {d_rowWordOffset,c,d_rowWordOffset,d_wordSplits,d_columnStringOffset});
-
-
-	        gpu::free(columnStringData);
-
-
-	        printf("(%d, %d, %d), ", c, h_wordPerColumn,h_wordColumnSize);
+	        gpu::free(d_columnStringData);
+	        // printf("(%d, %d, %d), ", c, h_wordPerColumn,h_wordColumnSize);
 	        sumWords+=h_wordPerColumn;
         }
         gpu::free(d_wordColumnSize);

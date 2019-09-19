@@ -134,28 +134,48 @@ struct countWordPerColumn {
 };
 
 
-// struct copyWordsToColumn {
-// 	soffset_t *rowWordCounter;
-// 	soffset_t  currentCol;
-
-// 	soffset_t *rowWordOffsets;
-// 	split_t   *wordSplits;
-
-//     soffset_t *d_columnStringSize;
+struct copyWordsToColumn {
+	soffset_t *rowWordCounter;
+	soffset_t  currentCol;
+	string_t *dataString;
+	soffset_t *rowDataOffsets;
 
 
-// 	OPERATOR(int row){
+	soffset_t *rowWordOffsets;
+	split_t   *wordSplits;
+    soffset_t *columnStringOffset;
+	string_t  *columnStringData;
+	soffset_t lineCounts;
 
-// 		soffset_t len 		= rowWordCounter[row+1]-rowWordCounter[row];
-// 		if(len>currentCol){
 
-// 			atomicAdd(columnWordCounter,1);
-// 			atomicAdd(columnSize,wordSplits[rowWordOffsets[row]+currentCol].len);
+	OPERATOR(int row){
 
-// 			d_columnStringSize[row] = wordSplits[rowWordOffsets[row]+currentCol].len;
-// 		}
-// 	}
-// };
+		soffset_t len 		= rowWordCounter[row];
+		if(len>currentCol){
+			split_t spl = wordSplits[rowWordOffsets[row]+currentCol];
+			soffset_t dataOffset = rowDataOffsets[row] + spl.start;
+
+			// if(row==(lineCounts-1)){
+			// 	printf("allo");
+			// }
+
+			// if(row==(lineCounts-1)){
+			// 	// printf("%c",  columnStringData[columnStringOffset[row]+i]);
+			// 	// printf("%d %d %d\n", dataOffset , spl.start,spl.len);
+			// }
+
+
+			for (soffset_t i=0; i<spl.len; i++){
+				columnStringData[columnStringOffset[row]+i] = dataString[dataOffset+i];
+				// if(row==(lineCounts-1)){
+				// 	printf("%c",  dataString[dataOffset+i]);
+				// }
+
+			}
+			// d_columnStringSize[row] = wordSplits[rowWordOffsets[row]+currentCol].len;
+		}
+	}
+};
 
 
 
