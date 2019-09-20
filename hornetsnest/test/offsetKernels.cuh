@@ -159,17 +159,17 @@ struct copyWordsToColumn {
 			// 	printf("allo");
 			// }
 
-			// if(row==(lineCounts-1)){
-			// 	// printf("%c",  columnStringData[columnStringOffset[row]+i]);
-			// 	// printf("%d %d %d\n", dataOffset , spl.start,spl.len);
-			// }
+			if(row==(lineCounts-1)){
+				// printf("%c",  columnStringData[columnStringOffset[row]+i]);
+				// printf("%d %d %d\n", dataOffset , spl.start,spl.len);
+			}
 
 
 			for (soffset_t i=0; i<spl.len; i++){
 				columnStringData[columnStringOffset[row]+i] = dataString[dataOffset+i];
-				// if(row==(lineCounts-1)){
-				// 	printf("%c",  dataString[dataOffset+i]);
-				// }
+				if(row==(lineCounts-1)){
+					printf("%c",  dataString[dataOffset+i]);
+				}
 
 			}
 			// d_columnStringSize[row] = wordSplits[rowWordOffsets[row]+currentCol].len;
