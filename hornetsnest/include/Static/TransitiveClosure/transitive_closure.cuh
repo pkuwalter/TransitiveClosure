@@ -74,6 +74,9 @@ struct SimpleBubbleSort {
     OPERATOR(Vertex& vertex) {
         vid_t src = vertex.id();
 
+        // if(vertex.id()<5)
+        //     printf("%d %d\n", vertex.id(),vertex.degree());
+
         degree_t size = vertex.degree();
         if(size<=1)
             return;
@@ -83,6 +86,8 @@ struct SimpleBubbleSort {
             for(vid_t j=i+1; j<(size); j++){
                 if(vertex.neighbor_ptr()[j]<vertex.neighbor_ptr()[min_idx])
                     min_idx=j;
+                // if (vertex.neighbor_ptr()[j]==vertex.neighbor_ptr()[j-1])
+                //     printf("*");
             }
             vid_t temp = vertex.neighbor_ptr()[i];
             vertex.neighbor_ptr()[i] = vertex.neighbor_ptr()[min_idx];
@@ -107,7 +112,28 @@ struct OPERATOR_AdjIntersectionCountBalanced {
             //printf("Intersecting %d, %d: %d -> %d, %d -> %d\n", u.id(), v.id(), *ui_begin, *ui_end, *vi_begin, *vi_end);
             while (vi_begin <= vi_end && ui_begin <= ui_end) {
                 comp_equals = (*ui_begin == *vi_begin);
-                count += 1-comp_equals;
+                if(countOnly){
+                    count += 1-comp_equals;
+                    // if(u.id()==0 || v.id()==0)
+                    //     printf("%d %d %d %d\n", u.id(), v.id(), *ui_begin, *vi_begin);
+                }
+                else{
+                    if(!comp_equals){
+                        vid_t second = *vi_begin;
+                        if (*ui_begin<*vi_begin)
+                            second=*ui_begin;
+
+                        trans_t pos = atomicAdd(d_CountNewEdges, 2);
+                        d_src[pos]  = u.id();
+                        d_dest[pos] = second;
+                        d_src[pos+1]  = v.id();
+                        d_dest[pos+1] = second;
+
+                        // if(u.id()==0 || v.id()==0)
+                        //     printf("%d %d %d\n", u.id(), v.id(), second)
+
+                    }
+                }
                 // count += comp_equals;
                 comp1 = (*ui_begin >= *vi_begin);
                 comp2 = (*ui_begin <= *vi_begin);
@@ -123,17 +149,17 @@ struct OPERATOR_AdjIntersectionCountBalanced {
             }
         } else {
             vid_t vi_low, vi_high, vi_mid;
-            count = 1;// Setting the value to having been found.
             while (ui_begin <= ui_end) {
                 auto search_val = *ui_begin;
                 vi_low = 0;
                 vi_high = vi_end-vi_begin;
+                bool earlyBreak=false;
                 while (vi_low <= vi_high) {
                     vi_mid = (vi_low+vi_high)/2;
                     auto comp = (*(vi_begin+vi_mid) - search_val);
                     if (!comp) {
                         // count += 1;
-                        count = 0; // If the value has been found. We don't want to add an edge
+                        earlyBreak=true;
                         break;
                     }
                     if (comp > 0) {
@@ -142,19 +168,24 @@ struct OPERATOR_AdjIntersectionCountBalanced {
                         vi_low = vi_mid+1;
                     }
                 }
+                if(earlyBreak==false){
+                    // printf("$$$\n");
+                    if(countOnly){
+                        count++; // If the value has been found. We don't want to add an edge
+                    }else{
+                        trans_t pos = atomicAdd(d_CountNewEdges, 2);
+                        d_src[pos]  = u.id();
+                        d_dest[pos] = search_val;
+                        d_src[pos+1]  = v.id();
+                        d_dest[pos+1] = search_val;
+                    }
+                }
                 ui_begin += 1;
             }
         }
         if(count>0){
             if(countOnly){
                 atomicAdd(d_CountNewEdges, count);
-            }else{
-                trans_t pos = atomicAdd(d_CountNewEdges, 2*count);
-                d_src[pos]  = u.id();
-                d_dest[pos] = v.id();
-
-                d_src[pos+1]  = v.id();
-                d_dest[pos+1] = u.id();
             }
         }
     }
@@ -172,6 +203,8 @@ void TransitiveClosure::run() {
 }
 
 void TransitiveClosure::run(const int WORK_FACTOR=1){
+
+    int iterations=0;
     while(true){
 
         cudaMemset(d_CountNewEdges,0,sizeof(trans_t));
@@ -180,32 +213,38 @@ void TransitiveClosure::run(const int WORK_FACTOR=1){
         trans_t h_batchSize;
         cudaMemcpy(&h_batchSize,d_CountNewEdges, sizeof(trans_t),cudaMemcpyDeviceToHost);
 
-        printf("New batch size is %lld\n", h_batchSize);
-
         if(h_batchSize==0){
             break;
         }
+        h_batchSize *=2;
 
         cudaMemset(d_CountNewEdges,0,sizeof(trans_t));
+        gpu::allocate(d_src, h_batchSize );
+        gpu::allocate(d_dest, h_batchSize);
 
-        gpu::allocate(d_src, 2*h_batchSize + 10);
-        gpu::allocate(d_dest, 2*h_batchSize + 10);
+
+        // cudaMemset(d_src,0,sizeof(vid_t)*h_batchSize);
+        // cudaMemset(d_dest,0,sizeof(vid_t)*h_batchSize);
+
 
         forAllAdjUnions(hornet, OPERATOR_AdjIntersectionCountBalanced<false> { d_CountNewEdges, d_src, d_dest }, WORK_FACTOR);
+        cudaDeviceSynchronize();
 
-        cudaMemcpy(&h_batchSize,d_CountNewEdges, sizeof(trans_t),cudaMemcpyDeviceToHost);
 
-        printf("New batch size is %lld\n", h_batchSize);
-
-        UpdatePtr ptr(2*h_batchSize, d_src, d_dest);
+        UpdatePtr ptr(h_batchSize, d_src, d_dest);
         Update batch_update(ptr);
-        hornet.insert(batch_update);
+        hornet.insert(batch_update,true,true);
+        cudaDeviceSynchronize();
+        printf("New batch size is %lld and HornetSize %d \n", h_batchSize, hornet.nE());
 
         sortHornet();
 
         gpu::free(d_src);
         gpu::free(d_dest);
-        return;
+
+        iterations++;
+        if(iterations==10)
+            break;
     }
 }
 

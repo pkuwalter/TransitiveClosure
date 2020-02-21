@@ -23,7 +23,7 @@ int exec(int argc, char* argv[]) {
     Timer<DEVICE> TM;
     TM.start();
 
-    transClos.run(1);
+    transClos.run(0);
 
     TM.stop();
     TM.print("Transitive Closure");
