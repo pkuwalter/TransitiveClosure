@@ -107,33 +107,44 @@ struct OPERATOR_AdjIntersectionCountBalanced {
 
     OPERATOR(Vertex &u, Vertex& v, vid_t* ui_begin, vid_t* ui_end, vid_t* vi_begin, vid_t* vi_end, int FLAG) {
         int count = 0;
+
+        bool vSrc=false;
+        vid_t src = u.id();
+        vid_t dest = v.id();
+        if(FLAG&2){
+            vSrc=true;
+            src = v.id();
+            dest = u.id();
+        }
+
+
         if (!FLAG) {
             int comp_equals, comp1, comp2, ui_bound, vi_bound;
             //printf("Intersecting %d, %d: %d -> %d, %d -> %d\n", u.id(), v.id(), *ui_begin, *ui_end, *vi_begin, *vi_end);
             while (vi_begin <= vi_end && ui_begin <= ui_end) {
                 comp_equals = (*ui_begin == *vi_begin);
-                if(countOnly){
-                    count += 1-comp_equals;
-                    // if(u.id()==0 || v.id()==0)
-                    //     printf("%d %d %d %d\n", u.id(), v.id(), *ui_begin, *vi_begin);
-                }
-                else{
-                    if(!comp_equals){
-                        vid_t second = *vi_begin;
-                        if (*ui_begin<*vi_begin)
-                            second=*ui_begin;
+                if(!comp_equals){
 
-                        trans_t pos = atomicAdd(d_CountNewEdges, 2);
-                        d_src[pos]  = u.id();
-                        d_dest[pos] = second;
-                        d_src[pos+1]  = v.id();
-                        d_dest[pos+1] = second;
-
-                        // if(u.id()==0 || v.id()==0)
-                        //     printf("%d %d %d\n", u.id(), v.id(), second)
-
+                    if(!vSrc && *ui_begin > *vi_begin && *vi_begin != u.id()){
+                        if(countOnly){
+                            count++;
+                        }else{
+                            trans_t pos = atomicAdd(d_CountNewEdges, 1);
+                            d_src[pos]  = u.id();
+                            d_dest[pos] = *vi_begin;
+                        }
+                    }else if(vSrc && *ui_begin < *vi_begin && *ui_begin !=v.id()){
+                        if(countOnly){
+                            count++;
+                        }else{
+                            trans_t pos = atomicAdd(d_CountNewEdges, 1);
+                            d_src[pos]  = v.id();
+                            d_dest[pos] = *ui_begin;
+                        }
                     }
+                    
                 }
+
                 // count += comp_equals;
                 comp1 = (*ui_begin >= *vi_begin);
                 comp2 = (*ui_begin <= *vi_begin);
@@ -148,6 +159,10 @@ struct OPERATOR_AdjIntersectionCountBalanced {
                     ui_begin += 1;
             }
         } else {
+            // if((ui_end!=ui_begin) && (vi_end!=vi_begin)){
+            //     printf("This shouldn't happen %d %d\n", ui_end-ui_begin,vi_end-vi_begin);
+            // }
+            return;
             vid_t vi_low, vi_high, vi_mid;
             while (ui_begin <= ui_end) {
                 auto search_val = *ui_begin;
@@ -216,10 +231,12 @@ void TransitiveClosure::run(const int WORK_FACTOR=1){
         if(h_batchSize==0){
             break;
         }
-        h_batchSize *=2;
+        // h_batchSize *=2;
+        printf("First  - New batch size is %lld and HornetSize %d \n", h_batchSize, hornet.nE());
+
 
         cudaMemset(d_CountNewEdges,0,sizeof(trans_t));
-        gpu::allocate(d_src, h_batchSize );
+        gpu::allocate(d_src, h_batchSize);
         gpu::allocate(d_dest, h_batchSize);
 
 
@@ -233,9 +250,9 @@ void TransitiveClosure::run(const int WORK_FACTOR=1){
 
         UpdatePtr ptr(h_batchSize, d_src, d_dest);
         Update batch_update(ptr);
-        hornet.insert(batch_update,true,true);
+        hornet.insert(batch_update,true,false);
         cudaDeviceSynchronize();
-        printf("New batch size is %lld and HornetSize %d \n", h_batchSize, hornet.nE());
+        printf("Second - New batch size is %lld and HornetSize %d \n", h_batchSize, hornet.nE());
 
         sortHornet();
 
@@ -243,8 +260,8 @@ void TransitiveClosure::run(const int WORK_FACTOR=1){
         gpu::free(d_dest);
 
         iterations++;
-        if(iterations==10)
-            break;
+        // if(iterations==10)
+            // break;
     }
 }
 
