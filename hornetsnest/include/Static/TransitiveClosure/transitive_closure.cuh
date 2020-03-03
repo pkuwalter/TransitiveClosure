@@ -37,6 +37,9 @@ public:
     void run(const int WORK_FACTOR);
     void init();
     void sortHornet();
+
+    void cleanGraph();
+
 protected:
    // triangle_t* triPerVertex { nullptr };
 
@@ -44,6 +47,8 @@ protected:
 
     vid_t* d_src { nullptr };
     vid_t* d_dest { nullptr };
+    vid_t* d_srcOut { nullptr };
+    vid_t* d_destOut { nullptr };
     // batch_t* d_batchSize { nullptr };
 
 };
@@ -80,20 +85,38 @@ struct SimpleBubbleSort {
         degree_t size = vertex.degree();
         if(size<=1)
             return;
+
+        // if(src==250){
+        //     for (vid_t i = 0; i < (size); i++) {
+        //         printf("%d ", vertex.neighbor_ptr()[i]);
+        //     }
+        //     printf("\n");
+        // }
+// (250,0,1,5,252,252)
+
         for (vid_t i = 0; i < (size-1); i++) {
             vid_t min_idx=i;
 
-            for(vid_t j=i+1; j<(size); j++){
-                if(vertex.neighbor_ptr()[j]<vertex.neighbor_ptr()[min_idx])
+            for(vid_t j=(i+1); j<(size); j++){
+                if(vertex.neighbor_ptr()[j]<vertex.neighbor_ptr()[min_idx]){
                     min_idx=j;
-                // if (vertex.neighbor_ptr()[j]==vertex.neighbor_ptr()[j-1])
+                }
+                if (vertex.neighbor_ptr()[j]==vertex.neighbor_ptr()[j-1]){
+                    // printf("(%d,%d,%d,%d,%d,%d)\n",src,i,j,size,vertex.neighbor_ptr()[j],vertex.neighbor_ptr()[j-1]);
+                }
                 //     printf("*");
             }
             vid_t temp = vertex.neighbor_ptr()[i];
             vertex.neighbor_ptr()[i] = vertex.neighbor_ptr()[min_idx];
             vertex.neighbor_ptr()[min_idx] = temp;
         }
- 
+        //  if(src==250){
+        //     for (vid_t i = 0; i < (size); i++) {
+        //         printf("%d ", vertex.neighbor_ptr()[i]);
+        //     }
+        //     printf("\n");
+        // }
+
     }
 };
 
@@ -108,13 +131,19 @@ struct OPERATOR_AdjIntersectionCountBalanced {
     OPERATOR(Vertex &u, Vertex& v, vid_t* ui_begin, vid_t* ui_end, vid_t* vi_begin, vid_t* vi_end, int FLAG) {
         int count = 0;
 
+        if(u.id()==v.id()){
+            // printf("@");
+            return;
+        }
+
         bool vSrc=false;
-        vid_t src = u.id();
-        vid_t dest = v.id();
+        // vid_t src = u.id();
+        // vid_t dest = v.id();
         if(FLAG&2){
             vSrc=true;
-            src = v.id();
-            dest = u.id();
+            // src = v.id();
+            // dest = u.id();
+            // printf("^");
         }
 
 
@@ -125,7 +154,7 @@ struct OPERATOR_AdjIntersectionCountBalanced {
                 comp_equals = (*ui_begin == *vi_begin);
                 if(!comp_equals){
 
-                    if(!vSrc && *ui_begin > *vi_begin && *vi_begin != u.id()){
+                    if(!vSrc && *ui_begin > *vi_begin && *vi_begin != u.id() && *vi_begin != v.id()){
                         if(countOnly){
                             count++;
                         }else{
@@ -133,7 +162,7 @@ struct OPERATOR_AdjIntersectionCountBalanced {
                             d_src[pos]  = u.id();
                             d_dest[pos] = *vi_begin;
                         }
-                    }else if(vSrc && *ui_begin < *vi_begin && *ui_begin !=v.id()){
+                    }else if(vSrc && *ui_begin < *vi_begin && *ui_begin !=v.id() && *ui_begin != u.id()){
                         if(countOnly){
                             count++;
                         }else{
@@ -158,45 +187,71 @@ struct OPERATOR_AdjIntersectionCountBalanced {
                 if ((comp2 && !ui_bound) || vi_bound)
                     ui_begin += 1;
             }
+            while(!vSrc && vi_begin <= vi_end){
+                if(*vi_begin != u.id()){
+                    if(countOnly){
+                        count++;
+                    }else{
+                        trans_t pos = atomicAdd(d_CountNewEdges, 1);
+                        d_src[pos]  = u.id();
+                        d_dest[pos] = *vi_begin;
+                    }
+                }
+                vi_begin +=1;
+            }
+            while(vSrc && ui_begin <= ui_end){
+                if(*ui_begin != v.id()){
+                    if(countOnly){
+                        count++;
+                    }else{
+                        trans_t pos = atomicAdd(d_CountNewEdges, 1);
+                        d_src[pos]  = v.id();
+                        d_dest[pos] = *ui_begin;
+                    }
+                }
+                ui_begin +=1;
+            }
+
+
         } else {
             // if((ui_end!=ui_begin) && (vi_end!=vi_begin)){
             //     printf("This shouldn't happen %d %d\n", ui_end-ui_begin,vi_end-vi_begin);
             // }
             return;
-            vid_t vi_low, vi_high, vi_mid;
-            while (ui_begin <= ui_end) {
-                auto search_val = *ui_begin;
-                vi_low = 0;
-                vi_high = vi_end-vi_begin;
-                bool earlyBreak=false;
-                while (vi_low <= vi_high) {
-                    vi_mid = (vi_low+vi_high)/2;
-                    auto comp = (*(vi_begin+vi_mid) - search_val);
-                    if (!comp) {
-                        // count += 1;
-                        earlyBreak=true;
-                        break;
-                    }
-                    if (comp > 0) {
-                        vi_high = vi_mid-1;
-                    } else if (comp < 0) {
-                        vi_low = vi_mid+1;
-                    }
-                }
-                if(earlyBreak==false){
-                    // printf("$$$\n");
-                    if(countOnly){
-                        count++; // If the value has been found. We don't want to add an edge
-                    }else{
-                        trans_t pos = atomicAdd(d_CountNewEdges, 2);
-                        d_src[pos]  = u.id();
-                        d_dest[pos] = search_val;
-                        d_src[pos+1]  = v.id();
-                        d_dest[pos+1] = search_val;
-                    }
-                }
-                ui_begin += 1;
-            }
+            // vid_t vi_low, vi_high, vi_mid;
+            // while (ui_begin <= ui_end) {
+            //     auto search_val = *ui_begin;
+            //     vi_low = 0;
+            //     vi_high = vi_end-vi_begin;
+            //     bool earlyBreak=false;
+            //     while (vi_low <= vi_high) {
+            //         vi_mid = (vi_low+vi_high)/2;
+            //         auto comp = (*(vi_begin+vi_mid) - search_val);
+            //         if (!comp) {
+            //             // count += 1;
+            //             earlyBreak=true;
+            //             break;
+            //         }
+            //         if (comp > 0) {
+            //             vi_high = vi_mid-1;
+            //         } else if (comp < 0) {
+            //             vi_low = vi_mid+1;
+            //         }
+            //     }
+            //     if(earlyBreak==false){
+            //         // printf("$$$\n");
+            //         if(countOnly){
+            //             count++; // If the value has been found. We don't want to add an edge
+            //         }else{
+            //             trans_t pos = atomicAdd(d_CountNewEdges, 2);
+            //             d_src[pos]  = u.id();
+            //             d_dest[pos] = search_val;
+            //             d_src[pos+1]  = v.id();
+            //             d_dest[pos+1] = search_val;
+            //         }
+            //     }
+            //     ui_begin += 1;
+            // }
         }
         if(count>0){
             if(countOnly){
@@ -206,6 +261,66 @@ struct OPERATOR_AdjIntersectionCountBalanced {
     }
 };
 
+
+__global__ void filterSortedBatch(trans_t originalBatchSize, trans_t* newBatchSize, 
+    vid_t* srcSorted, vid_t* destSorted,
+    vid_t* srcFiltered, vid_t* destFiltered){
+
+    trans_t i = blockIdx.x*blockDim.x + threadIdx.x;
+    trans_t stride = blockDim.x*gridDim.x; 
+    // if(i==0)
+    //     printf("stride = %llu \n",stride);
+
+    for (; i < originalBatchSize; i+=stride){
+        if(i==0){
+            trans_t pos = atomicAdd(newBatchSize,1);
+            srcFiltered[pos]  = srcSorted[0];
+            destFiltered[pos] = destSorted[0];
+        }else{
+            if((srcSorted[i]!=srcSorted[i-1]) || (srcSorted[i]==srcSorted[i-1] && destSorted[i]!=destSorted[i-1])){
+                trans_t pos = atomicAdd(newBatchSize,1);
+                srcFiltered[pos] = srcSorted[i];
+                destFiltered[pos] = destSorted[i];
+            }else if(srcSorted[i]==destSorted[i]){
+                printf("$");
+            }
+        }
+    }
+}
+
+template <bool countOnly>
+struct findDuplicatesForRemoval {                  //deterministic
+    trans_t* newBatchSize;
+    vid_t* srcDelete;
+    vid_t* destDelete;
+    OPERATOR(Vertex& vertex) {
+
+        degree_t size = vertex.degree();
+        if(size<=1)
+            return;
+
+        // if(vertex.id()==250)
+        //     printf("*%d\n",vertex.neighbor_ptr()[0]);
+
+        for (vid_t i = 1; i < (size); i++) {
+        //     if(vertex.id()==250)
+        //         printf("*%d\n",vertex.neighbor_ptr()[i]);
+
+
+            if(vertex.neighbor_ptr()[i]==vertex.neighbor_ptr()[i-1]){
+                if(countOnly){
+                    atomicAdd(newBatchSize,1);
+                }else{
+                    trans_t pos = atomicAdd(newBatchSize,1);
+                    srcDelete[pos] = vertex.id();
+                    destDelete[pos] = vertex.neighbor_ptr()[i];
+                }
+            }
+        }
+    }
+};
+//-------
+    
 
 void TransitiveClosure::reset(){
 
@@ -236,33 +351,126 @@ void TransitiveClosure::run(const int WORK_FACTOR=1){
 
 
         cudaMemset(d_CountNewEdges,0,sizeof(trans_t));
-        gpu::allocate(d_src, h_batchSize);
-        gpu::allocate(d_dest, h_batchSize);
+        // gpu::allocate(d_src, h_batchSize);
+        // gpu::allocate(d_dest, h_batchSize);
 
+        cudaMallocManaged(&d_src, h_batchSize*sizeof(trans_t));
+        cudaMallocManaged(&d_dest, h_batchSize*sizeof(trans_t));
+        cudaMallocManaged(&d_srcOut, h_batchSize*sizeof(trans_t));
+        cudaMallocManaged(&d_destOut, h_batchSize*sizeof(trans_t));
 
-        // cudaMemset(d_src,0,sizeof(vid_t)*h_batchSize);
-        // cudaMemset(d_dest,0,sizeof(vid_t)*h_batchSize);
+        // gpu::allocate(d_src, h_batchSize);
+        // gpu::allocate(d_dest, h_batchSize);
 
 
         forAllAdjUnions(hornet, OPERATOR_AdjIntersectionCountBalanced<false> { d_CountNewEdges, d_src, d_dest }, WORK_FACTOR);
         cudaDeviceSynchronize();
+        trans_t unFilterBatchSize = h_batchSize;
+        vid_t* temp;
 
+        if(1){
+            void     *d_temp_storage = NULL;
+            size_t   temp_storage_bytes = 0;
+            cub::DeviceRadixSort::SortPairs(d_temp_storage, temp_storage_bytes,
+                d_dest, d_destOut, d_src, d_srcOut, h_batchSize);
+            // Allocate temporary storage
+            cudaMallocManaged(&d_temp_storage, temp_storage_bytes);
+            // Run sorting operation
+
+
+            cub::DeviceRadixSort::SortPairs(d_temp_storage, temp_storage_bytes,
+                d_dest, d_destOut, d_src, d_srcOut, h_batchSize);
+            cudaDeviceSynchronize();
+            temp = d_dest; d_dest=d_destOut; d_destOut=temp;
+            temp = d_src; d_src=d_srcOut; d_srcOut=temp;
+
+            cub::DeviceRadixSort::SortPairs(d_temp_storage, temp_storage_bytes,
+                 d_src, d_srcOut, d_dest, d_destOut, h_batchSize);
+            cudaDeviceSynchronize();
+            temp = d_dest; d_dest=d_destOut; d_destOut=temp;
+            temp = d_src; d_src=d_srcOut; d_srcOut=temp;
+
+            gpu::free(d_temp_storage);
+
+        }else{
+            thrust::stable_sort_by_key(thrust::device, d_dest, d_dest + h_batchSize, d_src);
+            thrust::stable_sort_by_key(thrust::device, d_src, d_src + h_batchSize, d_dest);            
+            cudaDeviceSynchronize();
+        }
+
+        cudaMemset(d_CountNewEdges,0,sizeof(trans_t));
+        filterSortedBatch<<<1024,256>>>(unFilterBatchSize,d_CountNewEdges,d_src,d_dest,d_srcOut,d_destOut);
+        cudaDeviceSynchronize();
+
+        trans_t h_batchSizeNew;
+
+        cudaMemcpy(&h_batchSizeNew,d_CountNewEdges, sizeof(trans_t),cudaMemcpyDeviceToHost);
+        temp = d_dest; d_dest=d_destOut; d_destOut=temp;
+        temp = d_src; d_src=d_srcOut; d_srcOut=temp;
+
+        printf("Intermediate - Before  %lld and after %lld\n", h_batchSize,h_batchSizeNew);
+
+
+        gpu::free(d_srcOut);
+        gpu::free(d_destOut);
+
+        if(!h_batchSizeNew){
+            break;
+        }
+
+        UpdatePtr ptr(h_batchSizeNew, d_src, d_dest);
+        Update batch_update(ptr);
+        hornet.insert(batch_update,false,false);
+        cudaDeviceSynchronize();
+        printf("Second - New batch size is %lld and HornetSize %d \n", h_batchSizeNew, hornet.nE());
+
+        sortHornet();
+
+
+        gpu::free(d_src);
+        gpu::free(d_dest);
+
+        iterations++;
+
+        cleanGraph();
+        // if(iterations==1)
+        //     break;
+    }
+}
+
+void TransitiveClosure::cleanGraph(){
+
+        cudaMemset(d_CountNewEdges,0,sizeof(trans_t));
+
+
+        forAllVertices(hornet, findDuplicatesForRemoval<true>{d_CountNewEdges, d_src, d_dest});
+
+        trans_t h_batchSize;
+        cudaMemcpy(&h_batchSize,d_CountNewEdges, sizeof(trans_t),cudaMemcpyDeviceToHost);
+
+        if(!h_batchSize)
+            return;
+
+        cudaMallocManaged(&d_src, h_batchSize*sizeof(trans_t));
+        cudaMallocManaged(&d_dest, h_batchSize*sizeof(trans_t));
+
+        cudaMemset(d_CountNewEdges,0,sizeof(trans_t));
+
+
+        forAllVertices(hornet, findDuplicatesForRemoval<false>{d_CountNewEdges, d_src, d_dest});
+        printf("Number of duplicates in initial graph is: %lld\n",h_batchSize);
 
         UpdatePtr ptr(h_batchSize, d_src, d_dest);
         Update batch_update(ptr);
-        hornet.insert(batch_update,true,false);
+        hornet.erase(batch_update);
+
         cudaDeviceSynchronize();
-        printf("Second - New batch size is %lld and HornetSize %d \n", h_batchSize, hornet.nE());
 
         sortHornet();
 
         gpu::free(d_src);
         gpu::free(d_dest);
 
-        iterations++;
-        // if(iterations==10)
-            // break;
-    }
 }
 
 
