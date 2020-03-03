@@ -11,14 +11,31 @@ int exec(int argc, char* argv[]) {
     using namespace timer;
     using namespace hornets_nest;
 
-    graph::GraphStd<vid_t, eoff_t> graph(graph::structure_prop::UNDIRECTED);
-    CommandLineParam cmd(graph, argc, argv);
+    using namespace graph::structure_prop;
+    using namespace graph::parsing_prop;
+    using namespace graph;
+
+
+    // graph::GraphStd<vid_t, eoff_t> graph(graph::structure_prop::UNDIRECTED);
+    graph::GraphStd<vid_t, eoff_t> graph(graph::structure_prop::DIRECTED);
+    // CommandLineParam cmd(graph, argc, argv);
+    graph.read(argv[1], SORT | PRINT_INFO );
+
+    printf("Very start %d %d\n",graph.nV(), graph.nE());
+
+    int size = graph.csr_out_offsets()[251]-graph.csr_out_offsets()[250];
+    for(int s=0; s<size; s++){
+        printf("%d ", graph.csr_out_edges()[graph.csr_out_offsets()[250]+s]);
+    }
+    printf("\n");
 
     HornetInit hornet_init(graph.nV(), graph.nE(), graph.csr_out_offsets(),
                            graph.csr_out_edges());
     HornetGraph hornet_graph(hornet_init);
 
     TransitiveClosure transClos(hornet_graph);
+
+    transClos.cleanGraph();
 
     Timer<DEVICE> TM;
     TM.start();
