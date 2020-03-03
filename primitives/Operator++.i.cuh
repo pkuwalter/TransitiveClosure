@@ -117,9 +117,9 @@ __global__ void forAllEdgesAdjUnionBalancedKernel(HornetDevice hornet, T* __rest
         vid_t src = src_vtx.id();
         vid_t dest = dst_vtx.id();
 
-        bool avoidCalc = (src == dest) || (srcLen < 2);
-        if (avoidCalc)
-            continue;
+        // bool avoidCalc = (src == dest) || (srcLen < 2);
+        // if (avoidCalc)
+        //     continue;
 
         // determine u,v where |adj(u)| <= |adj(v)|
         bool sourceSmaller = srcLen < destLen;
@@ -191,8 +191,11 @@ __global__ void forAllEdgesAdjUnionBalancedKernel(HornetDevice hornet, T* __rest
             vi_end = pathPoints[(block_local_id+1)*2];
             ui_end = pathPoints[(block_local_id+1)*2+1];
         }
+        int flag2=flag;
+        if (!sourceSmaller)
+            flag2=flag+2;
         if (diag_id < total_work) {
-            op(u_vtx, v_vtx, u_nodes+ui_begin, u_nodes+ui_end, v_nodes+vi_begin, v_nodes+vi_end, flag);
+            op(u_vtx, v_vtx, u_nodes+ui_begin, u_nodes+ui_end, v_nodes+vi_begin, v_nodes+vi_end, flag2);
         }
     }
 }
