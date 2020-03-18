@@ -13,7 +13,11 @@ int exec(int argc, char* argv[]) {
     using namespace timer;
     using namespace hornets_nest;
 
-    graph::GraphStd<vid_t, eoff_t> graph;
+    using namespace graph::structure_prop;
+    using namespace graph::parsing_prop;
+
+
+    graph::GraphStd<vid_t, eoff_t> graph(DIRECTED );
     CommandLineParam cmd(graph, argc, argv,false);
 
 
@@ -21,33 +25,40 @@ int exec(int argc, char* argv[]) {
                            graph.csr_out_edges());
 
     Timer<DEVICE> TM;
-    cudaProfilerStart();
-    TM.start();
     HornetGraph hornet_graph(hornet_init);
-    TM.stop();
-    cudaProfilerStop();
-    TM.print("Initilization Time:");
 
     BFS bfs_top_down(hornet_graph);
 
     vid_t root = graph.max_out_degree_id();
-    if (argc==3)
-        root = atoi(argv[2]);
+    // if (argc==3)
+    //     root = atoi(argv[2]);
+    int numberRoots = 10;
+    if (argc>=3)
+      numberRoots = atoi(argv[2]);
+
+    int alg = 0;
+    if (argc>=4)
+      alg = atoi(argv[3]);
+
+  printf("Alg is %d\n",alg);
 
     std::cout << "My root is " << root << std::endl;
 
-    bfs_top_down.set_parameters(root);
 
     cudaProfilerStart();
     TM.start();
+    for(int i=0; i<numberRoots; i++){
+        bfs_top_down.reset();
+        bfs_top_down.set_parameters((root+i)%graph.nV());
+        bfs_top_down.runAlg(alg);
+        std::cout << "Number of levels is : " << bfs_top_down.getLevels() << std::endl;
 
-    bfs_top_down.run();
+    }
 
     TM.stop();
     cudaProfilerStop();
     TM.print("TopDown2");
 
-    std::cout << "Number of levels is : " << bfs_top_down.getLevels() << std::endl;
 
     auto is_correct = bfs_top_down.validate();
     std::cout << (is_correct ? "\nCorrect <>\n\n" : "\n! Not Correct\n\n");

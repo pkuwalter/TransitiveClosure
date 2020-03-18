@@ -40,23 +40,30 @@ int exec(int argc, char* argv[]) {
     BfsBottomUp2 bfs_top_down(hornet_graph, hornet_graph_inv);
  
 	vid_t root = graph.max_out_degree_id();
-	if (argc==3)
-	  root = atoi(argv[2]);
+	// if (argc==3)
+	//   root = atoi(argv[2]);
 
-    bfs_bottom_up.set_parameters(root);
-    bfs_top_down.set_parameters(root);
-    
- 
+    int numberRoots = 10;
+    if (argc==3)
+      numberRoots = atoi(argv[2]);
+
     Timer<DEVICE> TM;
+
     cudaProfilerStart();
     TM.start();
+    for(int i=0; i<numberRoots; i++){
+        bfs_top_down.reset();
+        bfs_bottom_up.set_parameters((root+i)%graph.nV());
+        bfs_top_down.set_parameters((root+i)%graph.nV());
+     
+        bfs_bottom_up.run(hornet_graph_inv);
 
-    //bfs_top_down.run();
-    bfs_bottom_up.run(hornet_graph_inv);
+    }
 
     TM.stop();
     cudaProfilerStop();
-    TM.print("BottomUp2");
+    TM.print("Direction-Optimizing");
+
 
     auto is_correct = bfs_bottom_up.validate();
     std::cout << (is_correct ? "\nCorrect <>\n\n" : "\n! Not Correct\n\n");
